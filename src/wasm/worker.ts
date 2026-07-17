@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 declare const self: DedicatedWorkerGlobalScope;
 
-import type { WasmModule, Qlever, EngineConfig, IndexBuilderConfig, InputFileSpecificationVector, InputFileSpecification } from '../types/wasm.d.ts';
+import type { MainModule, Qlever, EngineConfig, IndexBuilderConfig, InputFileSpecificationVector, InputFileSpecification } from '@ad-freiburg/qlever';
 
 // The ES module build (`-sEXPORT_ES6=1`) exposes the Emscripten factory as the
 // default export. It locates `qlever.wasm` and spawns its pthread workers
@@ -17,7 +17,7 @@ import createQleverModule from '@ad-freiburg/qlever';
 // Emscripten's pthread handshake and hang the main instance's ready promise.
 const isEmscriptenPthreadWorker = (self as any).name?.startsWith('em-pthread');
 
-let module: WasmModule | null = null;
+let module: MainModule | null = null;
 let qleverInstance: Qlever | null = null;
 let qleverEngineConfig: EngineConfig | null = null;
 let qleverConfig: IndexBuilderConfig | null = null;
@@ -28,8 +28,8 @@ const moduleReady = isEmscriptenPthreadWorker ? null : createQleverModule({
   noInitialRun: true,
   print: (text: string) => self.postMessage({ type: 'log', text }),
   printErr: (text: string) => self.postMessage({ type: 'log', text }),
-}).then((mod: unknown) => {
-  module = mod as WasmModule;
+}).then((mod) => {
+  module = mod;
 });
 
 function destroyQleverInstance(): void {
@@ -81,7 +81,7 @@ if (!isEmscriptenPthreadWorker) self.onmessage = async (e: MessageEvent) => {
         qleverFileSpec = new m.InputFileSpecification();
 
         qleverFileSpec.filename = config.rdfFile;
-        qleverFileSpec.filetype = m.Filetype[config.filetype]!;
+        qleverFileSpec.filetype = m.Filetype[config.filetype as keyof typeof m.Filetype]!;
         qleverConfig.baseName = config.baseName;
 
         qleverVec.push_back(qleverFileSpec);
@@ -105,7 +105,7 @@ if (!isEmscriptenPthreadWorker) self.onmessage = async (e: MessageEvent) => {
         qleverFileSpec = new m.InputFileSpecification();
 
         qleverFileSpec.filename = filename;
-        qleverFileSpec.filetype = m.Filetype[filetype]!;
+        qleverFileSpec.filetype = m.Filetype[filetype as keyof typeof m.Filetype]!;
         qleverConfig.baseName = baseName;
         qleverConfig.vocabType = m.VocabularyType.InMemoryCompressed;
 
