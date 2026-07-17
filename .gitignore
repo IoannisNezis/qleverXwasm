@@ -23,5 +23,3 @@ dist-ssr
 *.sln
 *.sw?
 /.claude
-/public/qlever.wasm
-/public/qlever.js

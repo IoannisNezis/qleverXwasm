@@ -1,6 +1,14 @@
 import type { DatasetConfig } from '../datasets/config.ts';
 
-const worker = new Worker(new URL('./worker.ts', import.meta.url));
+// Must be a module worker: worker.ts now `import`s the Emscripten ES module,
+// which a classic worker cannot do (it would fail to evaluate and hang the
+// module's ready promise forever).
+const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+
+// Surface worker load/eval failures instead of hanging silently at "loading".
+worker.onerror = (e) => {
+  console.error('[wasm worker] failed to load:', e.message || e);
+};
 
 let wasmReady = false;
 let nextId = 0;

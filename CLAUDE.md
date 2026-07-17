@@ -5,34 +5,39 @@ QLever (SPARQL engine) compiled to WebAssembly via Emscripten, served as a local
 ## Project structure
 
 - `src/` — TypeScript frontend (Vite + Tailwind)
-  - `wasm/worker.ts` — Web Worker that loads and runs the WASM module
-  - `wasm/loader.ts` — Main-thread API that communicates with the worker
-  - `ui/` — UI event handlers
-  - `datasets/` — Dataset configuration
-- `modified_qlever_files/` — Modified QLever source files copied into the upstream tree at build time
-  - `CMakeLists.txt` — Emscripten link flags (pthreads, memory, assertions)
-  - `Qlever.cpp` — QLever entry point with embind bindings
-  - `emscripten.profile` — Conan profile for cross-compiling to WASM
-- `public/` — Built WASM artifacts (`qlever.js`, `qlever.wasm`)
-- `justfile` — Build orchestration
-- `QLEVER_PATCHES.md` — Documents all upstream QLever source patches and their rationale
+  - `wasm/worker.ts` — module Web Worker that loads and runs the WASM module
+  - `wasm/loader.ts` — main-thread API that communicates with the worker
+  - `ui/` — UI event handlers and rendering
+  - `datasets/` — dataset configuration and loading
+  - `types/wasm.d.ts` — local type definitions for the WASM module interface
+- `public/` — static web root; serves the dataset files fetched at runtime
+- `index.html` — app entry point
 
-## Build system
+## WASM module dependency
 
-Uses `just` for build orchestration. The upstream QLever repo is at `~/code/qlever`.
+The compiled engine comes from the [`@ad-freiburg/qlever`](https://www.npmjs.com/package/@ad-freiburg/qlever)
+npm package (published from the upstream QLever repo). It ships `qlever.mjs` — an
+ES module whose default export is the Emscripten factory — plus `qlever.wasm`.
+`worker.ts` imports the factory directly; the module locates `qlever.wasm` and
+spawns its pthread workers via `import.meta.url`, and Vite serves those assets
+from `node_modules`.
 
-| Command | What it does |
-|---------|-------------|
-| `just build` | Full build: copy-files, patch-sources, install (conan), configure (cmake), compile, deploy |
-| `just rebuild` | Quick rebuild: compile + deploy (only re-links, no reconfigure) |
-| `just copy-files configure rebuild` | Use when CMakeLists.txt or emscripten.profile changed (needs reconfigure) |
-| `just build` | Use when upstream patches (sed rules) changed |
+To move to a newer engine, bump the dependency (`npm install @ad-freiburg/qlever@<version>`).
 
-**Key distinction**: `just rebuild` skips `configure`, so changes to CMakeLists.txt linker flags require at least `just copy-files configure compile deploy`.
+## Running
 
-## WASM memory model
+- `npm install` — install dependencies (fetches the WASM package from npm)
+- `npm run dev` — start the Vite dev server (http://localhost:5173)
+- `npm run build` — type-check and build for production
 
-- Initial memory: 64MB, grows on demand up to MAXIMUM_MEMORY (set in emscripten.profile)
-- SharedArrayBuffer is required (pthreads) — browsers cap this at 4GB
-- Emscripten's `mmap()` allocates real memory (copies data), so mmap'd VFS files exist twice in heap
-- See `QLEVER_PATCHES.md` for all memory-related constant patches
+The dev server sets `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` (see `vite.config.ts`), which are
+required for the `SharedArrayBuffer` that Emscripten pthreads use.
+
+## Notes
+
+- The engine uses threads, so index building and querying are blocking calls; they
+  run inside a Web Worker (`worker.ts`). It must be a **module** worker (`{ type:
+  'module' }` in `loader.ts`) so it can `import` the ES module.
+- `SharedArrayBuffer` is required (pthreads); browsers cap it at 4 GB.
+- The module is built for wasm64, so it needs a recent browser.

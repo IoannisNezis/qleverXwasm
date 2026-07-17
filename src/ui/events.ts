@@ -126,8 +126,8 @@ export function initApp(): void {
         memoryLimitMB: 1024 * 4,
         noPatterns: true,
         onlyPsoAndPos: false,
-        // Bottleneck #2: the parallel Turtle parser deadlocks under WASM pthreads.
-        // Force the single-threaded parser. See BOTTLENECKS.md#bottleneck-2.
+        // The parallel Turtle parser is prone to deadlocks under the WASM
+        // pthread pool, so force the single-threaded parser.
         settingsJson: JSON.stringify({ 'parallel-parsing': false }),
       });
       datasetLoaded = true;
