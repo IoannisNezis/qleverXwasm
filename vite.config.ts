@@ -8,13 +8,12 @@ export default defineConfig({
   worker: {
     format: 'es'
   },
+  // Keep the Emscripten glue out of esbuild's dep pre-bundling: rewriting it
+  // would break the `import.meta.url` that the module uses to locate
+  // `qlever.wasm` and to spawn its pthread workers. Vite/vite-plugin-wasm
+  // resolve and emit those assets from the package instead.
   optimizeDeps: {
-    exclude: ['qlever.js']
-  },
-  build: {
-    rollupOptions: {
-      external: ['qlever.js']
-    }
+    exclude: ['@ad-freiburg/qlever']
   },
   server: {
     port: 5173,

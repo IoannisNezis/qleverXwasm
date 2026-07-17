@@ -21,11 +21,12 @@ export interface IndexBuilderConfig {
   delete(): void;
 }
 
-export interface Vocabtype {
-  InMemUncompressed: number;
+export interface VocabularyType {
+  InMemoryUncompressed: number;
   InMemoryCompressed: number;
   OnDiskUncompressed: number;
   OnDiskCompressed: number;
+  OnDiskCompressedGeoSplit: number;
 }
 
 export interface EngineConfig {
@@ -62,7 +63,7 @@ export interface WasmModule {
   Qlever: QleverConstructor;
   FS: EmscriptenFS;
   Filetype: Filetype;
-  Vocabtype: Vocabtype;
+  VocabularyType: VocabularyType;
   MediaType: MediaType;
   getExceptionMessage(ptr: number): [string, string];
 }

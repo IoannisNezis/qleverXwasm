@@ -3,8 +3,19 @@ declare const self: DedicatedWorkerGlobalScope;
 
 import type { WasmModule, Qlever, EngineConfig, IndexBuilderConfig, InputFileSpecificationVector, InputFileSpecification } from '../types/wasm.d.ts';
 
+// The ES module build (`-sEXPORT_ES6=1`) exposes the Emscripten factory as the
+// default export. It locates `qlever.wasm` and spawns its pthread workers
+// itself (as module workers) via `import.meta.url`, so this file no longer
+// side-loads a global via `importScripts` and no longer needs a `locateFile`.
+import createQleverModule from '@ad-freiburg/qlever';
 
-importScripts('/qlever.js');
+// Emscripten now spawns its pthread pool workers pointing directly at
+// `qlever.mjs` (not at this file), and that module self-bootstraps in them.
+// So THIS worker only ever runs as the main instance. The guard is kept as a
+// harmless safety net: were this file ever loaded in an "em-pthread" worker,
+// instantiating a second module or assigning `self.onmessage` would clobber
+// Emscripten's pthread handshake and hang the main instance's ready promise.
+const isEmscriptenPthreadWorker = (self as any).name?.startsWith('em-pthread');
 
 let module: WasmModule | null = null;
 let qleverInstance: Qlever | null = null;
@@ -13,14 +24,12 @@ let qleverConfig: IndexBuilderConfig | null = null;
 let qleverVec: InputFileSpecificationVector | null = null;
 let qleverFileSpec: InputFileSpecification | null = null;
 
-const moduleReady = (self as any).QLever({
-  mainScriptUrlOrBlob: '/qlever.js',
-  locateFile: (path: string) => '/' + path,
+const moduleReady = isEmscriptenPthreadWorker ? null : createQleverModule({
   noInitialRun: true,
   print: (text: string) => self.postMessage({ type: 'log', text }),
   printErr: (text: string) => self.postMessage({ type: 'log', text }),
-}).then((mod: WasmModule) => {
-  module = mod;
+}).then((mod: unknown) => {
+  module = mod as WasmModule;
 });
 
 function destroyQleverInstance(): void {
@@ -36,7 +45,7 @@ function destroyQleverInstance(): void {
   qleverFileSpec = null;
 }
 
-self.onmessage = async (e: MessageEvent) => {
+if (!isEmscriptenPthreadWorker) self.onmessage = async (e: MessageEvent) => {
   const { type, id, ...data } = e.data;
 
   try {
@@ -98,7 +107,7 @@ self.onmessage = async (e: MessageEvent) => {
         qleverFileSpec.filename = filename;
         qleverFileSpec.filetype = m.Filetype[filetype]!;
         qleverConfig.baseName = baseName;
-        qleverConfig.vocabType = m.Vocabtype.InMemoryCompressed;
+        qleverConfig.vocabType = m.VocabularyType.InMemoryCompressed;
 
         // Apply memory and build settings
         if (settings?.memoryLimitMB != null) {
