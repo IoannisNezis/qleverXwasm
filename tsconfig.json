@@ -17,8 +17,6 @@
     "moduleDetection": "force",
     "noEmit": true,
     "noEmitOnError": false,
-    "baseUrl": ".",
-    "paths": {"*": ["types/*"]},
 
     /* Linting */
     "strict": true,

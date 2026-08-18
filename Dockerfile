@@ -9,7 +9,7 @@ COPY package.json /QLeverToWebAssembly/
 COPY package-lock.json /QLeverToWebAssembly/
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy the rest of the project
 COPY src /QLeverToWebAssembly/src/
