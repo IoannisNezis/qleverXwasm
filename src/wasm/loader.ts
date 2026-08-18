@@ -3,12 +3,15 @@
 // module's ready promise forever).
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 
-// Surface worker load/eval failures instead of hanging silently at "loading".
+// A worker that failed to load will never answer, so reject everything it owes us
+// instead of leaving the caller pending forever.
 worker.onerror = (e) => {
   console.error('[wasm worker] failed to load:', e.message || e);
+  rejectAllPending(
+    new Error(`The engine worker could not be started: ${e.message || 'unknown error'}`),
+  );
 };
 
-let wasmReady = false;
 let nextId = 0;
 const pending = new Map<number, { resolve: (value: any) => void; reject: (reason: any) => void }>();
 
@@ -43,6 +46,11 @@ worker.onmessage = (e: MessageEvent) => {
   }
 };
 
+function rejectAllPending(error: Error): void {
+  for (const p of pending.values()) p.reject(error);
+  pending.clear();
+}
+
 function send(msg: Record<string, unknown>, transfer: Transferable[] = []): Promise<any> {
   const id = nextId++;
   return new Promise((resolve, reject) => {
@@ -52,13 +60,16 @@ function send(msg: Record<string, unknown>, transfer: Transferable[] = []): Prom
 }
 
 export async function initWasm(): Promise<void> {
+  if (!crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') {
+    throw new Error(
+      'This page is not cross-origin isolated, so the engine cannot use the ' +
+        'SharedArrayBuffer its threads need. Serve it with the headers ' +
+        'Cross-Origin-Opener-Policy: same-origin and ' +
+        'Cross-Origin-Embedder-Policy: require-corp.',
+    );
+  }
   await send({ type: 'init' });
-  wasmReady = true;
   console.log('WASM loaded (in worker)');
-}
-
-export function isWasmReady(): boolean {
-  return wasmReady;
 }
 
 export interface BuildIndexSettings {
