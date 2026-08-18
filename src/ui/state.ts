@@ -5,6 +5,7 @@ import {
   filetypeSelect,
   buildIndexBtn,
   buildIndexStatus,
+  clearFileBtn,
   indexTextInput,
   downloadIndexBtn,
   engineStatus,
@@ -180,8 +181,12 @@ export function setBuildDetail(text: string, tone: Tone): void {
   buildIndexStatus.className = TONES[tone];
 }
 
+function hasFile(): boolean {
+  return (indexFileInput.files?.length ?? 0) > 0;
+}
+
 function hasBuildData(): boolean {
-  return (indexFileInput.files?.length ?? 0) > 0 || indexTextInput.value.trim().length > 0;
+  return hasFile() || indexTextInput.value.trim().length > 0;
 }
 
 /** Re-derive every control from the current state. Cheap and idempotent. */
@@ -192,9 +197,16 @@ export function refreshControls(): void {
   engineStatus.className = TONES[spec.tone];
 
   gateInput(indexFileInput, spec.buildInput);
-  gateInput(indexTextInput, spec.buildInput);
   gateInput(filetypeSelect, spec.buildInput);
   gateInput(input, spec.queryInput);
+
+  // A selected file takes precedence over pasted data, so say so on the box it
+  // overrides instead of letting the user type into something that is ignored.
+  gateInput(
+    indexTextInput,
+    spec.buildInput ??
+      (hasFile() ? 'The selected file will be indexed — clear it to paste data instead.' : null),
+  );
 
   // Empty-input checks live here too, so the button is never clickable in a state
   // that would only produce a validation error.
@@ -207,6 +219,7 @@ export function refreshControls(): void {
     spec.queryAction ?? (input.value.trim() ? null : 'Enter a SPARQL query first.'),
   );
   gateAction(downloadIndexBtn, spec.download);
+  gateAction(clearFileBtn, spec.buildInput ?? (hasFile() ? null : 'No file is selected.'));
 }
 
 export function setAppState(next: AppState, reason?: string): void {

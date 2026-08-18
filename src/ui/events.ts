@@ -4,6 +4,7 @@ import {
   indexFileInput,
   filetypeSelect,
   buildIndexBtn,
+  clearFileBtn,
   indexTextInput,
   downloadIndexBtn,
   resultContainer,
@@ -106,6 +107,17 @@ async function runExtract(): Promise<void> {
   }
 }
 
+/**
+ * A file input cannot be emptied by the user, so without this the first selection
+ * would permanently shadow the paste box. Assigning '' is the standard way to drop
+ * the FileList; it fires no event, so the gating has to be refreshed by hand.
+ */
+function clearFile(): void {
+  if (refused(clearFileBtn, reportToBuild)) return;
+  indexFileInput.value = '';
+  refreshControls();
+}
+
 export function initApp(): void {
   // Keep the gating in step with what has actually been entered.
   for (const el of [indexFileInput, indexTextInput]) {
@@ -122,6 +134,7 @@ export function initApp(): void {
     }
   });
 
+  clearFileBtn.addEventListener('click', clearFile);
   buildIndexBtn.addEventListener('click', runBuild);
   downloadIndexBtn.addEventListener('click', runExtract);
 

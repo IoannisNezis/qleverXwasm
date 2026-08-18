@@ -5,6 +5,7 @@ export const indexFileInput = document.getElementById('indexFileInput') as HTMLI
 export const filetypeSelect = document.getElementById('filetypeSelect') as HTMLSelectElement;
 export const buildIndexBtn = document.getElementById('buildIndexBtn') as HTMLButtonElement;
 export const buildIndexStatus = document.getElementById('buildIndexStatus') as HTMLElement;
+export const clearFileBtn = document.getElementById('clearFileBtn') as HTMLButtonElement;
 export const indexTextInput = document.getElementById('indexTextInput') as HTMLTextAreaElement;
 export const downloadIndexBtn = document.getElementById('downloadIndexBtn') as HTMLButtonElement;
 export const engineStatus = document.getElementById('engineStatus') as HTMLParagraphElement;
