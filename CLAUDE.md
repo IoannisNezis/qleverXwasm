@@ -38,5 +38,13 @@ required for the `SharedArrayBuffer` that Emscripten pthreads use.
 - The engine uses threads, so index building and querying are blocking calls; they
   run inside a Web Worker (`worker.ts`). It must be a **module** worker (`{ type:
   'module' }` in `loader.ts`) so it can `import` the ES module.
-- `SharedArrayBuffer` is required (pthreads); browsers cap it at 4 GB.
-- The module is built for wasm64, so it needs a recent browser.
+- `SharedArrayBuffer` is required (pthreads); browsers cap it at 4 GB. The page
+  must therefore be cross-origin isolated — `vite.config.ts` sets the required
+  COOP/COEP headers on both the dev and the preview server, and any host serving
+  the production build has to send them as well.
+- Objects created with `new` from the module own memory in the WebAssembly heap
+  that the JS garbage collector does not free. Declare them with `using` so they
+  are released when the block ends; only the long-lived `Qlever` engine is kept
+  in a variable and released by hand (`destroyEngine()` in `worker.ts`).
+- The module is built for wasm64, so it needs a recent browser (or Node.js >= 24,
+  which is also what the package's `engines` field requires).
