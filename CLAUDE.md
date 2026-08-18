@@ -8,8 +8,7 @@ QLever (SPARQL engine) compiled to WebAssembly via Emscripten, served as a local
   - `wasm/worker.ts` — module Web Worker that loads and runs the WASM module
   - `wasm/loader.ts` — main-thread API that communicates with the worker
   - `ui/` — UI event handlers and rendering
-  - `datasets/` — dataset configuration and loading
-- `public/` — static web root; serves the dataset files fetched at runtime
+  - `engine/` — query execution
 - `index.html` — app entry point
 
 ## WASM module dependency

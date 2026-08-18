@@ -1,5 +1,3 @@
-import type { DatasetConfig } from '../datasets/config.ts';
-
 // Must be a module worker: worker.ts now `import`s the Emscripten ES module,
 // which a classic worker cannot do (it would fail to evaluate and hang the
 // module's ready promise forever).
@@ -61,10 +59,6 @@ export async function initWasm(): Promise<void> {
 
 export function isWasmReady(): boolean {
   return wasmReady;
-}
-
-export async function loadDataset(datasetKey: string, config: DatasetConfig): Promise<void> {
-  await send({ type: 'loadDataset', datasetKey, config });
 }
 
 export interface BuildIndexSettings {

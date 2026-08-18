@@ -2,7 +2,6 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>QLeverUI</title>
     <script type="module" src="/src/main.ts"></script>
@@ -15,20 +14,6 @@
           <span class="text-green-accent">QLever</span>
           <span class="text-gray-400 text-sm font-normal ml-2">WebAssembly</span>
         </h1>
-        <div class="flex items-center gap-4">
-          <label for="datasetSelect" class="text-sm text-gray-400">Dataset</label>
-          <select
-            id="datasetSelect"
-            class="bg-gray-800 border border-gray-700 text-gray-100 text-sm rounded-md px-3 py-2 focus:outline-none focus:border-green-accent"
-          >
-            <option value="">-- Select index --</option>
-            <option value="House">House</option>
-            <option value="Olympics">Olympics</option>
-            <option value="IRI-resolution">IRI-resolution</option>
-            <option value="TBBT">The Big Bang Theory</option>
-          </select>
-          <span id="statusIndicator" class="text-sm text-gray-500"></span>
-        </div>
       </div>
     </header>
 
@@ -87,20 +72,12 @@
     <main class="max-w-5xl mx-auto px-6 py-8 space-y-6">
       <!-- Query panel -->
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
-        <div class="flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-gray-200">Query</h2>
-          <select
-            id="queryOptions"
-            class="bg-gray-800 border border-gray-700 text-gray-300 text-sm rounded-md px-3 py-2 focus:outline-none focus:border-green-accent max-w-xs"
-          >
-            <option value="">-- Select a preset --</option>
-          </select>
-        </div>
+        <h2 class="text-lg font-semibold text-gray-200">Query</h2>
 
         <textarea
           id="userInput"
           class="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-3 font-mono text-sm text-gray-100 focus:outline-none focus:border-green-accent resize-y min-h-32"
-          placeholder="Enter SPARQL query or select a preset above..."
+          placeholder="Enter SPARQL query..."
           rows="8"
         ></textarea>
 
@@ -119,7 +96,7 @@
       <div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
         <h2 class="text-lg font-semibold text-gray-200 mb-4">Results</h2>
         <div id="resultContainer" class="text-gray-400 text-sm">
-          Select a dataset and run a query to see results.
+          Build an index and run a query to see results.
         </div>
       </div>
 

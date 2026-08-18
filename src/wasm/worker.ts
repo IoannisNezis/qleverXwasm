@@ -62,40 +62,6 @@ if (!isEmscriptenPthreadWorker) self.onmessage = async (e: MessageEvent) => {
         break;
       }
 
-      case 'loadDataset': {
-        const { config } = data;
-
-        const results = await Promise.all(
-          config.indexFiles.map(async (filename: string) => {
-            const response = await fetch(`/${filename}`);
-            if (!response.ok) throw new Error(`Failed to fetch ${filename}`);
-            const buffer = await response.arrayBuffer();
-            return { filename, data: new Uint8Array(buffer) };
-          }),
-        );
-        for (const file of results) {
-          m.FS.writeFile(file.filename, file.data);
-        }
-
-        destroyEngine();
-
-        using indexConfig = new m.IndexBuilderConfig();
-        using fileSpec = new m.InputFileSpecification();
-        using inputFiles = new m.InputFileSpecificationVector();
-
-        fileSpec.filename = config.rdfFile;
-        fileSpec.filetype = m.Filetype[config.filetype as keyof typeof m.Filetype]!;
-        indexConfig.baseName = config.baseName;
-
-        inputFiles.push_back(fileSpec);
-        indexConfig.inputFiles = inputFiles;
-
-        engine = createEngine(m, indexConfig);
-
-        self.postMessage({ type: 'response', id });
-        break;
-      }
-
       case 'buildIndex': {
         const { filename, fileData, filetype, baseName, settings } = data;
 

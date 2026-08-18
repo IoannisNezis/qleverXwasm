@@ -1,73 +1,17 @@
-import { input, queryButton, queryOptions, datasetSelect, statusIndicator, indexFileInput, filetypeSelect, buildIndexBtn, buildIndexStatus, indexTextInput, downloadIndexBtn } from './elements.ts';
+import { input, queryButton, indexFileInput, filetypeSelect, buildIndexBtn, buildIndexStatus, indexTextInput, downloadIndexBtn } from './elements.ts';
 import { isWasmReady, buildIndex, extractIndexFiles } from '../wasm/loader.ts';
-import { loadQleverDataset } from '../datasets/loader.ts';
-import { DATASET_CONFIGS } from '../datasets/config.ts';
-import { PRESET_QUERIES } from '../queries/presets.ts';
 import { executeQuery } from '../engine/executor.ts';
 
-let datasetLoaded = false;
+let indexReady = false;
 let lastBuiltBaseName: string | null = null;
 
-function setStatus(text: string, type: 'info' | 'success' | 'error' = 'info'): void {
-  const colors = {
-    info: 'text-gray-400',
-    success: 'text-green-400',
-    error: 'text-red-400',
-  };
-  statusIndicator.textContent = text;
-  statusIndicator.className = `text-sm ${colors[type]}`;
-}
-
-function populateQueryDropdown(datasetKey: string): void {
-  queryOptions.innerHTML = '<option value="">-- Select a query --</option>';
-
-  const filtered = PRESET_QUERIES.filter((q) => q.datasets.includes(datasetKey));
-
-  filtered.forEach((q) => {
-    const option = document.createElement('option');
-    option.value = q.id;
-    option.textContent = q.label;
-    queryOptions.appendChild(option);
-  });
-}
-
 export function initApp(): void {
-  // Dataset selection
-  datasetSelect.addEventListener('change', async () => {
-    const selected = datasetSelect.value;
-    if (!selected) return;
-
-    if (!isWasmReady()) {
-      setStatus('WASM still loading...', 'error');
-      return;
-    }
-
-    const dsConfig = DATASET_CONFIGS[selected];
-    if (!dsConfig) {
-      setStatus('Please select a valid index!', 'error');
-      return;
-    }
-
-    setStatus(`Loading ${selected} dataset...`, 'info');
-    populateQueryDropdown(selected);
-    datasetLoaded = false;
-
-    try {
-      await loadQleverDataset(selected);
-      datasetLoaded = true;
-      setStatus(`${selected} dataset ready`, 'success');
-    } catch (e) {
-      console.error(`Failed to load dataset ${selected}:`, e);
-      setStatus(`Failed to load dataset: ${e}`, 'error');
-    }
-  });
-
   // Run query button
   queryButton.addEventListener('click', () => {
-    if (!datasetLoaded) {
+    if (!indexReady) {
       const resultContainer = document.getElementById('resultContainer')!;
       resultContainer.innerHTML =
-        '<p class="text-yellow-400 text-center py-8">No dataset loaded! Please select an index first.</p>';
+        '<p class="text-yellow-400 text-center py-8">No index available! Please build an index first.</p>';
       return;
     }
     executeQuery(input.value);
@@ -77,7 +21,7 @@ export function initApp(): void {
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && event.ctrlKey) {
       event.preventDefault();
-      if (datasetLoaded) {
+      if (indexReady) {
         executeQuery(input.value);
       }
     }
@@ -119,7 +63,7 @@ export function initApp(): void {
     buildIndexStatus.className = 'text-sm text-gray-400 animate-pulse';
     buildIndexBtn.disabled = true;
     downloadIndexBtn.classList.add('hidden');
-    datasetLoaded = false;
+    indexReady = false;
 
     try {
       await buildIndex(filename, fileData, filetype, baseName, {
@@ -130,11 +74,10 @@ export function initApp(): void {
         // pthread pool, so force the single-threaded parser.
         settingsJson: JSON.stringify({ 'parallel-parsing': false }),
       });
-      datasetLoaded = true;
+      indexReady = true;
       lastBuiltBaseName = baseName;
       buildIndexStatus.textContent = `Index built from ${source} — ready to query.`;
       buildIndexStatus.className = 'text-sm text-green-400';
-      setStatus('Custom index ready', 'success');
       downloadIndexBtn.classList.remove('hidden');
     } catch (e) {
       console.error('Failed to build index:', e);
@@ -168,17 +111,6 @@ export function initApp(): void {
     } finally {
       downloadIndexBtn.disabled = false;
       downloadIndexBtn.textContent = 'Download Index Files';
-    }
-  });
-
-  // Query preset selection
-  queryOptions.addEventListener('change', () => {
-    const selectedId = queryOptions.value;
-    if (!selectedId) return;
-
-    const preset = PRESET_QUERIES.find((q) => q.id === selectedId);
-    if (preset) {
-      input.value = preset.sparql;
     }
   });
 }

@@ -13,7 +13,6 @@ RUN npm ci
 
 # Copy the rest of the project
 COPY src /QLeverToWebAssembly/src/
-COPY public /QLeverToWebAssembly/public/
 COPY index.html /QLeverToWebAssembly/
 COPY tsconfig.json /QLeverToWebAssembly/
 COPY vite.config.ts /QLeverToWebAssembly/
