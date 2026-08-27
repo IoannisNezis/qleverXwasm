@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 declare const self: DedicatedWorkerGlobalScope;
 
-import type { MainModule, Qlever, EngineConfig, IndexBuilderConfig, InputFileSpecificationVector, InputFileSpecification } from '@ad-freiburg/qlever';
+import type { MainModule, Qlever, IndexBuilderConfig } from '@ad-freiburg/qlever';
 
 // The ES module build (`-sEXPORT_ES6=1`) exposes the Emscripten factory as the
 // default export. It locates `qlever.wasm` and spawns its pthread workers
@@ -18,11 +18,13 @@ import createQleverModule from '@ad-freiburg/qlever';
 const isEmscriptenPthreadWorker = (self as any).name?.startsWith('em-pthread');
 
 let module: MainModule | null = null;
-let qleverInstance: Qlever | null = null;
-let qleverEngineConfig: EngineConfig | null = null;
-let qleverConfig: IndexBuilderConfig | null = null;
-let qleverVec: InputFileSpecificationVector | null = null;
-let qleverFileSpec: InputFileSpecification | null = null;
+
+// Objects created with `new` own memory in the WebAssembly heap that the JS
+// garbage collector does not free, so every handle has to be released. The
+// short-lived build scaffolding is scoped with `using` below; the engine is the
+// only handle that must survive the message that created it (queries arrive in
+// later messages), so it is the only one released by hand.
+let engine: Qlever | null = null;
 
 const moduleReady = isEmscriptenPthreadWorker ? null : createQleverModule({
   noInitialRun: true,
@@ -32,17 +34,18 @@ const moduleReady = isEmscriptenPthreadWorker ? null : createQleverModule({
   module = mod;
 });
 
-function destroyQleverInstance(): void {
-  for (const obj of [qleverInstance, qleverEngineConfig, qleverConfig, qleverVec, qleverFileSpec]) {
-    if (obj) {
-      try { obj.delete(); } catch (_e) { /* ignore */ }
-    }
+function destroyEngine(): void {
+  if (engine) {
+    try { engine.delete(); } catch (_e) { /* ignore */ }
+    engine = null;
   }
-  qleverInstance = null;
-  qleverEngineConfig = null;
-  qleverConfig = null;
-  qleverVec = null;
-  qleverFileSpec = null;
+}
+
+// `engineConfig` is only read while the `Qlever` constructor runs, so it is
+// released as this function returns rather than being kept alongside the engine.
+function createEngine(m: MainModule, indexConfig: IndexBuilderConfig): Qlever {
+  using engineConfig = new m.EngineConfig(indexConfig);
+  return new m.Qlever(engineConfig);
 }
 
 if (!isEmscriptenPthreadWorker) self.onmessage = async (e: MessageEvent) => {
@@ -59,80 +62,45 @@ if (!isEmscriptenPthreadWorker) self.onmessage = async (e: MessageEvent) => {
         break;
       }
 
-      case 'loadDataset': {
-        const { config } = data;
-
-        const results = await Promise.all(
-          config.indexFiles.map(async (filename: string) => {
-            const response = await fetch(`/${filename}`);
-            if (!response.ok) throw new Error(`Failed to fetch ${filename}`);
-            const buffer = await response.arrayBuffer();
-            return { filename, data: new Uint8Array(buffer) };
-          }),
-        );
-        for (const file of results) {
-          m.FS.writeFile(file.filename, file.data);
-        }
-
-        destroyQleverInstance();
-
-        qleverConfig = new m.IndexBuilderConfig();
-        qleverVec = new m.InputFileSpecificationVector();
-        qleverFileSpec = new m.InputFileSpecification();
-
-        qleverFileSpec.filename = config.rdfFile;
-        qleverFileSpec.filetype = m.Filetype[config.filetype as keyof typeof m.Filetype]!;
-        qleverConfig.baseName = config.baseName;
-
-        qleverVec.push_back(qleverFileSpec);
-        qleverConfig.inputFiles = qleverVec;
-
-        qleverEngineConfig = new m.EngineConfig(qleverConfig);
-        qleverInstance = new m.Qlever(qleverEngineConfig);
-
-        self.postMessage({ type: 'response', id });
-        break;
-      }
-
       case 'buildIndex': {
         const { filename, fileData, filetype, baseName, settings } = data;
 
         m.FS.writeFile(filename, new Uint8Array(fileData));
-        destroyQleverInstance();
+        destroyEngine();
 
-        qleverConfig = new m.IndexBuilderConfig();
-        qleverVec = new m.InputFileSpecificationVector();
-        qleverFileSpec = new m.InputFileSpecification();
+        using indexConfig = new m.IndexBuilderConfig();
+        using fileSpec = new m.InputFileSpecification();
+        using inputFiles = new m.InputFileSpecificationVector();
 
-        qleverFileSpec.filename = filename;
-        qleverFileSpec.filetype = m.Filetype[filetype as keyof typeof m.Filetype]!;
-        qleverConfig.baseName = baseName;
-        qleverConfig.vocabType = m.VocabularyType.InMemoryCompressed;
+        fileSpec.filename = filename;
+        fileSpec.filetype = m.Filetype[filetype as keyof typeof m.Filetype]!;
+        indexConfig.baseName = baseName;
+        indexConfig.vocabType = m.VocabularyType.InMemoryCompressed;
 
         // Apply memory and build settings
         if (settings?.memoryLimitMB != null) {
-          qleverConfig.setMemoryLimitMB(settings.memoryLimitMB);
+          indexConfig.setMemoryLimitMB(settings.memoryLimitMB);
         }
         if (settings?.parserBufferSizeMB != null) {
-          qleverConfig.setParserBufferSizeMB(settings.parserBufferSizeMB);
+          indexConfig.setParserBufferSizeMB(settings.parserBufferSizeMB);
         }
         if (settings?.noPatterns != null) {
-          qleverConfig.noPatterns = settings.noPatterns;
+          indexConfig.noPatterns = settings.noPatterns;
         }
         if (settings?.onlyPsoAndPos != null) {
-          qleverConfig.onlyPsoAndPos = settings.onlyPsoAndPos;
+          indexConfig.onlyPsoAndPos = settings.onlyPsoAndPos;
         }
         // Write a JSON settings file for params only configurable that way
         // (num-triples-per-batch, parser-batch-size, parallel-parsing, etc.)
         if (settings?.settingsJson) {
           m.FS.writeFile('_wasm_settings.json', settings.settingsJson);
-          qleverConfig.settingsFile = '_wasm_settings.json';
+          indexConfig.settingsFile = '_wasm_settings.json';
         }
 
-        qleverVec.push_back(qleverFileSpec);
-        qleverConfig.inputFiles = qleverVec;
+        inputFiles.push_back(fileSpec);
+        indexConfig.inputFiles = inputFiles;
 
-        m.Qlever.buildIndex(qleverConfig);
+        m.Qlever.buildIndex(indexConfig);
 
         // Debug: list index files written to MEMFS
         try {
@@ -155,8 +123,7 @@ if (!isEmscriptenPthreadWorker) self.onmessage = async (e: MessageEvent) => {
         }
 
         console.log("Creating clever instance");
-        qleverEngineConfig = new m.EngineConfig(qleverConfig);
-        qleverInstance = new m.Qlever(qleverEngineConfig);
+        engine = createEngine(m, indexConfig);
 
         self.postMessage({ type: 'response', id });
         break;
@@ -178,8 +145,8 @@ if (!isEmscriptenPthreadWorker) self.onmessage = async (e: MessageEvent) => {
       }
 
       case 'query': {
-        if (!qleverInstance) throw new Error('No dataset loaded');
-        const result = qleverInstance.query(data.sparql, m.MediaType.qleverJson);
+        if (!engine) throw new Error('No dataset loaded');
+        const result = engine.query(data.sparql, m.MediaType.qleverJson);
         self.postMessage({ type: 'response', id, result });
         break;
       }

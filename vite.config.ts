@@ -2,6 +2,10 @@ import { defineConfig } from 'vite'
 import wasm from 'vite-plugin-wasm'
 import tailwindcss from '@tailwindcss/vite'
 
+const crossOriginIsolation = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp',
+};
 
 export default defineConfig({
   base: '/',
@@ -17,11 +21,10 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    headers: {
-      // Required for Emscripten pthreads in the browser
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
+    headers: crossOriginIsolation,
+  },
+  preview: {
+    headers: crossOriginIsolation,
   },
   plugins: [wasm(), tailwindcss()],
 });

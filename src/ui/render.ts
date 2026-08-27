@@ -1,3 +1,5 @@
+import { resultContainer } from './elements.ts';
+
 interface QleverResult {
   selected: string[];
   res: string[][];
@@ -8,11 +10,10 @@ interface QleverResult {
 export function renderQleverResult(jsonString: string): void {
   const data: QleverResult = JSON.parse(jsonString);
 
-  const container = document.getElementById('resultContainer')!;
-  container.innerHTML = '';
+  resultContainer.innerHTML = '';
 
   if (!data.res || data.res.length === 0) {
-    container.innerHTML =
+    resultContainer.innerHTML =
       '<p class="text-gray-400 text-center py-8">No results.</p>';
     return;
   }
@@ -72,10 +73,10 @@ export function renderQleverResult(jsonString: string): void {
 
   table.appendChild(tbody);
   wrapper.appendChild(table);
-  container.appendChild(wrapper);
+  resultContainer.appendChild(wrapper);
 
   const info = document.createElement('p');
   info.className = 'text-gray-400 text-sm mt-3';
   info.textContent = `Returned ${data.resultSizeTotal} results in ${data.time.total}`;
-  container.appendChild(info);
+  resultContainer.appendChild(info);
 }

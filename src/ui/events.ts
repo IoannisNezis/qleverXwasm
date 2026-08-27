@@ -1,184 +1,142 @@
-import { input, queryButton, queryOptions, datasetSelect, statusIndicator, indexFileInput, filetypeSelect, buildIndexBtn, buildIndexStatus, indexTextInput, downloadIndexBtn } from './elements.ts';
-import { isWasmReady, buildIndex, extractIndexFiles } from '../wasm/loader.ts';
-import { loadQleverDataset } from '../datasets/loader.ts';
-import { DATASET_CONFIGS } from '../datasets/config.ts';
-import { PRESET_QUERIES } from '../queries/presets.ts';
+import {
+  input,
+  queryButton,
+  indexFileInput,
+  filetypeSelect,
+  buildIndexBtn,
+  clearFileBtn,
+  indexTextInput,
+  downloadIndexBtn,
+  resultContainer,
+} from './elements.ts';
+import { buildIndex, extractIndexFiles } from '../wasm/loader.ts';
 import { executeQuery } from '../engine/executor.ts';
+import { blockedReason, refreshControls, setAppState, setBuildDetail } from './state.ts';
 
-let datasetLoaded = false;
 let lastBuiltBaseName: string | null = null;
 
-function setStatus(text: string, type: 'info' | 'success' | 'error' = 'info'): void {
-  const colors = {
-    info: 'text-gray-400',
-    success: 'text-green-400',
-    error: 'text-red-400',
-  };
-  statusIndicator.textContent = text;
-  statusIndicator.className = `text-sm ${colors[type]}`;
+function reportToBuild(reason: string): void {
+  setBuildDetail(reason, 'warn');
 }
 
-function populateQueryDropdown(datasetKey: string): void {
-  queryOptions.innerHTML = '<option value="">-- Select a query --</option>';
+function reportToResults(reason: string): void {
+  resultContainer.innerHTML = `<p class="text-yellow-400 text-center py-8">${reason}</p>`;
+}
 
-  const filtered = PRESET_QUERIES.filter((q) => q.datasets.includes(datasetKey));
+/** Refuse a gated action and say why, so a click is never a silent no-op. */
+function refused(button: HTMLElement, report: (reason: string) => void): boolean {
+  const reason = blockedReason(button);
+  if (reason) report(reason);
+  return reason !== null;
+}
 
-  filtered.forEach((q) => {
-    const option = document.createElement('option');
-    option.value = q.id;
-    option.textContent = q.label;
-    queryOptions.appendChild(option);
-  });
+async function runQuery(): Promise<void> {
+  if (refused(queryButton, reportToResults)) return;
+
+  // Claim the engine before awaiting, so a second trigger is refused rather than
+  // silently queued behind the running query.
+  setAppState('querying');
+  try {
+    await executeQuery(input.value);
+  } finally {
+    setAppState('queryable');
+  }
+}
+
+async function runBuild(): Promise<void> {
+  if (refused(buildIndexBtn, reportToBuild)) return;
+
+  const file = indexFileInput.files?.[0];
+  const text = indexTextInput.value.trim();
+  const filetype = filetypeSelect.value as 'NQuad' | 'Turtle';
+  const filename = file ? file.name : filetype === 'NQuad' ? 'input.nq' : 'input.nt';
+  const baseName = filename.replace(/\.[^.]+$/, '');
+  const source = file ? file.name : 'pasted data';
+
+  // Claim the engine before reading the file, which is itself an await.
+  setBuildDetail(`Building index from ${source}...`, 'info');
+  setAppState('building');
+
+  try {
+    const fileData = file ? await file.arrayBuffer() : new TextEncoder().encode(text).buffer;
+    await buildIndex(filename, fileData, filetype, baseName, {
+      memoryLimitMB: 1024 * 4,
+      noPatterns: true,
+      onlyPsoAndPos: false,
+      // The parallel Turtle parser is prone to deadlocks under the WASM
+      // pthread pool, so force the single-threaded parser.
+      settingsJson: JSON.stringify({ 'parallel-parsing': false }),
+    });
+    lastBuiltBaseName = baseName;
+    setBuildDetail(`Index built from ${source}.`, 'ok');
+    setAppState('queryable');
+  } catch (e) {
+    console.error('Failed to build index:', e);
+    setBuildDetail(`Failed to build index: ${e}`, 'error');
+    // The build wiped any previous engine, so there is nothing to query or
+    // download now.
+    lastBuiltBaseName = null;
+    setAppState('ready');
+  }
+}
+
+async function runExtract(): Promise<void> {
+  if (refused(downloadIndexBtn, reportToBuild)) return;
+  if (!lastBuiltBaseName) return;
+
+  setAppState('extracting');
+  downloadIndexBtn.textContent = 'Extracting...';
+  try {
+    const files = await extractIndexFiles(lastBuiltBaseName);
+    for (const file of files) {
+      const blob = new Blob([file.data]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    setBuildDetail(`Downloaded ${files.length} index files.`, 'ok');
+  } catch (e) {
+    console.error('Failed to extract index files:', e);
+    setBuildDetail(`Failed to extract files: ${e}`, 'error');
+  } finally {
+    downloadIndexBtn.textContent = 'Download Index Files';
+    setAppState('queryable');
+  }
+}
+
+/**
+ * A file input cannot be emptied by the user, so without this the first selection
+ * would permanently shadow the paste box. Assigning '' is the standard way to drop
+ * the FileList; it fires no event, so the gating has to be refreshed by hand.
+ */
+function clearFile(): void {
+  if (refused(clearFileBtn, reportToBuild)) return;
+  indexFileInput.value = '';
+  refreshControls();
 }
 
 export function initApp(): void {
-  // Dataset selection
-  datasetSelect.addEventListener('change', async () => {
-    const selected = datasetSelect.value;
-    if (!selected) return;
+  // Keep the gating in step with what has actually been entered.
+  for (const el of [indexFileInput, indexTextInput]) {
+    el.addEventListener('input', refreshControls);
+    el.addEventListener('change', refreshControls);
+  }
+  input.addEventListener('input', refreshControls);
 
-    if (!isWasmReady()) {
-      setStatus('WASM still loading...', 'error');
-      return;
-    }
-
-    const dsConfig = DATASET_CONFIGS[selected];
-    if (!dsConfig) {
-      setStatus('Please select a valid index!', 'error');
-      return;
-    }
-
-    setStatus(`Loading ${selected} dataset...`, 'info');
-    populateQueryDropdown(selected);
-    datasetLoaded = false;
-
-    try {
-      await loadQleverDataset(selected);
-      datasetLoaded = true;
-      setStatus(`${selected} dataset ready`, 'success');
-    } catch (e) {
-      console.error(`Failed to load dataset ${selected}:`, e);
-      setStatus(`Failed to load dataset: ${e}`, 'error');
-    }
-  });
-
-  // Run query button
-  queryButton.addEventListener('click', () => {
-    if (!datasetLoaded) {
-      const resultContainer = document.getElementById('resultContainer')!;
-      resultContainer.innerHTML =
-        '<p class="text-yellow-400 text-center py-8">No dataset loaded! Please select an index first.</p>';
-      return;
-    }
-    executeQuery(input.value);
-  });
-
-  // Ctrl+Enter to run query
+  queryButton.addEventListener('click', runQuery);
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && event.ctrlKey) {
       event.preventDefault();
-      if (datasetLoaded) {
-        executeQuery(input.value);
-      }
+      runQuery();
     }
   });
 
-  // Build index from file or text
-  buildIndexBtn.addEventListener('click', async () => {
-    const file = indexFileInput.files?.[0];
-    const text = indexTextInput.value.trim();
+  clearFileBtn.addEventListener('click', clearFile);
+  buildIndexBtn.addEventListener('click', runBuild);
+  downloadIndexBtn.addEventListener('click', runExtract);
 
-    if (!file && !text) {
-      buildIndexStatus.textContent = 'Please upload a file or paste RDF data.';
-      buildIndexStatus.className = 'text-sm text-yellow-400';
-      return;
-    }
-
-    if (!isWasmReady()) {
-      buildIndexStatus.textContent = 'WASM still loading...';
-      buildIndexStatus.className = 'text-sm text-red-400';
-      return;
-    }
-
-    const filetype = filetypeSelect.value as 'NQuad' | 'Turtle';
-    let filename: string;
-    let fileData: ArrayBuffer;
-
-    if (file) {
-      filename = file.name;
-      fileData = await file.arrayBuffer();
-    } else {
-      filename = filetype === 'NQuad' ? 'input.nq' : 'input.nt';
-      fileData = new TextEncoder().encode(text).buffer;
-    }
-
-    const baseName = filename.replace(/\.[^.]+$/, '');
-    const source = file ? file.name : 'pasted data';
-
-    buildIndexStatus.textContent = `Building index from ${source}...`;
-    buildIndexStatus.className = 'text-sm text-gray-400 animate-pulse';
-    buildIndexBtn.disabled = true;
-    downloadIndexBtn.classList.add('hidden');
-    datasetLoaded = false;
-
-    try {
-      await buildIndex(filename, fileData, filetype, baseName, {
-        memoryLimitMB: 1024 * 4,
-        noPatterns: true,
-        onlyPsoAndPos: false,
-        // The parallel Turtle parser is prone to deadlocks under the WASM
-        // pthread pool, so force the single-threaded parser.
-        settingsJson: JSON.stringify({ 'parallel-parsing': false }),
-      });
-      datasetLoaded = true;
-      lastBuiltBaseName = baseName;
-      buildIndexStatus.textContent = `Index built from ${source} — ready to query.`;
-      buildIndexStatus.className = 'text-sm text-green-400';
-      setStatus('Custom index ready', 'success');
-      downloadIndexBtn.classList.remove('hidden');
-    } catch (e) {
-      console.error('Failed to build index:', e);
-      buildIndexStatus.textContent = `Failed to build index: ${e}`;
-      buildIndexStatus.className = 'text-sm text-red-400';
-    } finally {
-      buildIndexBtn.disabled = false;
-    }
-  });
-
-  // Download index files
-  downloadIndexBtn.addEventListener('click', async () => {
-    if (!lastBuiltBaseName) return;
-    downloadIndexBtn.disabled = true;
-    downloadIndexBtn.textContent = 'Extracting...';
-    try {
-      const files = await extractIndexFiles(lastBuiltBaseName);
-      for (const file of files) {
-        const blob = new Blob([file.data]);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-    } catch (e) {
-      console.error('Failed to extract index files:', e);
-      buildIndexStatus.textContent = `Failed to extract files: ${e}`;
-      buildIndexStatus.className = 'text-sm text-red-400';
-    } finally {
-      downloadIndexBtn.disabled = false;
-      downloadIndexBtn.textContent = 'Download Index Files';
-    }
-  });
-
-  // Query preset selection
-  queryOptions.addEventListener('change', () => {
-    const selectedId = queryOptions.value;
-    if (!selectedId) return;
-
-    const preset = PRESET_QUERIES.find((q) => q.id === selectedId);
-    if (preset) {
-      input.value = preset.sparql;
-    }
-  });
+  refreshControls();
 }
