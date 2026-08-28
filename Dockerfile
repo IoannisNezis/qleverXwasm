@@ -1,27 +1,41 @@
-# Use official Node LTS image
-FROM node:24-alpine
+# Build the site with Node, then serve the static output with nginx.
 
-# Set working directory
-WORKDIR /QLeverToWebAssembly
+FROM node:24-alpine AS build
 
-# Copy package files first (better layer caching)
-COPY package.json /QLeverToWebAssembly/
-COPY package-lock.json /QLeverToWebAssembly/
+WORKDIR /app
 
-# Install dependencies
+# Copy the manifests first so the install layer is reused while only src changes.
+COPY package.json package-lock.json ./
 RUN npm ci
 
-# Copy the rest of the project
-COPY src /QLeverToWebAssembly/src/
-COPY index.html /QLeverToWebAssembly/
-COPY tsconfig.json /QLeverToWebAssembly/
-COPY vite.config.ts /QLeverToWebAssembly/
+COPY tsconfig.json vite.config.ts index.html ./
+COPY src ./src
 
-# Expose Vite default port
-EXPOSE 5173
+RUN npm run build
 
-# Allow Vite to be accessible outside container
-CMD ["npm", "run", "dev", "--", "--host"]
+# Store a gzipped copy next to every compressible asset. nginx's `gzip_static`
+# then serves it directly, which matters most for the ~60 MB engine `.wasm`:
+# compressing that per request would burn a second of CPU each time.
+RUN set -eux; \
+    find dist -type f \
+        \( -name '*.js'   -o -name '*.mjs'  -o -name '*.css'  -o -name '*.html' \
+        -o -name '*.wasm' -o -name '*.svg'  -o -name '*.json' -o -name '*.map' \) \
+        -size +1k \
+        -exec sh -c 'for f do gzip -9 -c "$f" > "$f.gz"; done' sh {} +
 
-# Run 'npm run dev' and open the visible URL (should be: http://localhost:5173/)
-# Ignore the pop up box. You can now interact with the site. 
+
+FROM nginx:1.29-alpine AS runtime
+
+COPY docker/nginx/cross-origin-isolation.conf /etc/nginx/snippets/
+COPY docker/nginx/default.conf               /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
+    CMD wget --spider -q http://127.0.0.1/healthz || exit 1
+
+# Build and run:
+#   docker build -t qlever-wasm .
+#   docker run --rm -p 8080:80 qlever-wasm
+# then open http://localhost:8080/

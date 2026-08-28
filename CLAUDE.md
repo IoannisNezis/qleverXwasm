@@ -17,6 +17,8 @@ QLever (SPARQL engine) compiled to WebAssembly via Emscripten, served as a local
   - `engine/` — query execution
   - `main.ts` — entry point: wires the UI up, then reports the engine's outcome
 - `index.html` — loads `src/main.ts`
+- `Dockerfile` — builds the site with Node, then serves `dist/` with nginx
+- `docker/nginx/` — the nginx config that serving the build requires
 
 ## WASM module dependency
 
@@ -45,7 +47,9 @@ To move to a newer engine, bump the dependency (`npm install @ad-freiburg/qlever
 - `SharedArrayBuffer` is required (pthreads); browsers cap it at 4 GB. The page
   must therefore be cross-origin isolated — `vite.config.ts` sets the required
   COOP/COEP headers on both the dev and the preview server, and any host serving
-  the production build has to send them as well. `initWasm()` checks
+  the production build has to send them as well — `docker/nginx/` does this for
+  the container, from a snippet included in every `location` (nginx's
+  `add_header` replaces the inherited set rather than adding to it). `initWasm()` checks
   `crossOriginIsolated` up front so a missing header is reported as itself rather
   than as an opaque load failure.
 - Objects created with `new` from the module own memory in the WebAssembly heap
@@ -67,3 +71,8 @@ To move to a newer engine, bump the dependency (`npm install @ad-freiburg/qlever
   placeholder, set by `executor.ts`.)
 - The module is built for wasm64, so it needs a recent browser (or Node.js >= 24,
   which is also what the package's `engines` field requires).
+- The production image pre-compresses the assets at build time and lets nginx's
+  `gzip_static` serve them, because gzipping the ~60 MB engine `.wasm` per
+  request is not something to pay for. Everything Vite fingerprints under
+  `/assets` is served `immutable`; `index.html`, which names those fingerprints,
+  is served `no-cache`.

@@ -1,0 +1,12 @@
+.git
+.gitignore
+.claude
+node_modules
+dist
+dist-ssr
+*.log
+logs
+CLAUDE.md
+README.md
+Dockerfile
+.dockerignore
