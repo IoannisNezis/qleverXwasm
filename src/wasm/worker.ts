@@ -8,6 +8,7 @@ import type { MainModule, Qlever, IndexBuilderConfig } from '@ad-freiburg/qlever
 // itself (as module workers) via `import.meta.url`, so this file no longer
 // side-loads a global via `importScripts` and no longer needs a `locateFile`.
 import createQleverModule from '@ad-freiburg/qlever';
+import { createLogRing, LogRingWriter } from './logRing.ts';
 
 // Emscripten now spawns its pthread pool workers pointing directly at
 // `qlever.mjs` (not at this file), and that module self-bootstraps in them.
@@ -19,6 +20,17 @@ const isEmscriptenPthreadWorker = (self as any).name?.startsWith('em-pthread');
 
 let module: MainModule | null = null;
 
+// The engine's output goes into a ring buffer that the page polls (see
+// logRing.ts) rather than into one message per line. The ring is created here and
+// announced before the engine starts, so not even its first line is lost.
+const logRing = isEmscriptenPthreadWorker ? null : createLogRing();
+const logWriter = logRing ? new LogRingWriter(logRing) : null;
+if (logRing) self.postMessage({ type: 'logRing', buffer: logRing });
+
+function log(text: string): void {
+  logWriter?.write(text);
+}
+
 // Objects created with `new` own memory in the WebAssembly heap that the JS
 // garbage collector does not free, so every handle has to be released. The
 // short-lived build scaffolding is scoped with `using` below; the engine is the
@@ -28,8 +40,8 @@ let engine: Qlever | null = null;
 
 const moduleReady = isEmscriptenPthreadWorker ? null : createQleverModule({
   noInitialRun: true,
-  print: (text: string) => self.postMessage({ type: 'log', text }),
-  printErr: (text: string) => self.postMessage({ type: 'log', text }),
+  print: log,
+  printErr: log,
 }).then((mod) => {
   module = mod;
 });
@@ -108,18 +120,18 @@ if (!isEmscriptenPthreadWorker) self.onmessage = async (e: MessageEvent) => {
           const indexFiles = files.filter((f: string) => f.startsWith(baseName));
           for (const f of indexFiles) {
             const stat = (m.FS as any).stat(f);
-            self.postMessage({ type: 'log', text: `[MEMFS] ${f} — ${stat.size} bytes` });
+            log(`[MEMFS] ${f} — ${stat.size} bytes`);
           }
           if (indexFiles.length === 0) {
-            self.postMessage({ type: 'log', text: `[MEMFS] WARNING: no files matching baseName="${baseName}" found!` });
+            log(`[MEMFS] WARNING: no files matching baseName="${baseName}" found!`);
           }
           // Log the metadata and input file contents
           const meta = new TextDecoder().decode(m.FS.readFile(`${baseName}.meta-data.json`));
-          self.postMessage({ type: 'log', text: `[MEMFS] meta-data.json: ${meta}` });
+          log(`[MEMFS] meta-data.json: ${meta}`);
           const inputData = new TextDecoder().decode(m.FS.readFile(filename));
-          self.postMessage({ type: 'log', text: `[MEMFS] ${filename}: ${inputData}` });
+          log(`[MEMFS] ${filename}: ${inputData}`);
         } catch (e) {
-          self.postMessage({ type: 'log', text: `[MEMFS] listing failed: ${e}` });
+          log(`[MEMFS] listing failed: ${e}`);
         }
 
         console.log("Creating clever instance");

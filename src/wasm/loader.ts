@@ -1,3 +1,6 @@
+import { LogRingReader } from './logRing.ts';
+import { appendLog } from '../ui/log.ts';
+
 // Must be a module worker: worker.ts now `import`s the Emscripten ES module,
 // which a classic worker cannot do (it would fail to evaluate and hang the
 // module's ready promise forever).
@@ -15,27 +18,25 @@ worker.onerror = (e) => {
 let nextId = 0;
 const pending = new Map<number, { resolve: (value: any) => void; reject: (reason: any) => void }>();
 
-const logContainer = document.getElementById('logContainer') as HTMLPreElement;
-const clearLogBtn = document.getElementById('clearLog') as HTMLButtonElement;
+/** Reads the worker's log; the worker announces its ring right after it starts. */
+let logReader: LogRingReader | null = null;
 
-function appendLog(text: string): void {
-  const line = document.createElement('span');
-  line.textContent = `[${new Date().toLocaleTimeString()}] ${text}\n`;
-  logContainer.appendChild(line);
-  logContainer.scrollTop = logContainer.scrollHeight;
+function drainLog(): void {
+  if (logReader) appendLog(logReader.read());
 }
 
-clearLogBtn?.addEventListener('click', () => {
-  logContainer.innerHTML = '';
-});
+// Polled rather than pushed: the worker cannot post anything while the engine
+// blocks it, but it can keep writing to the ring.
+setInterval(drainLog, 50);
 
 worker.onmessage = (e: MessageEvent) => {
   const { type, id, error, ...rest } = e.data;
-  if (type === 'log') {
-    console.log('[wasm]', rest.text);
-    appendLog(rest.text);
+  if (type === 'logRing') {
+    logReader = new LogRingReader(rest.buffer);
     return;
   }
+  // Show what the job logged before reporting its outcome.
+  drainLog();
   const p = pending.get(id);
   if (!p) return;
   pending.delete(id);

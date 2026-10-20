@@ -9,3 +9,5 @@ export const clearFileBtn = document.getElementById('clearFileBtn') as HTMLButto
 export const indexTextInput = document.getElementById('indexTextInput') as HTMLTextAreaElement;
 export const downloadIndexBtn = document.getElementById('downloadIndexBtn') as HTMLButtonElement;
 export const engineStatus = document.getElementById('engineStatus') as HTMLParagraphElement;
+export const logContainer = document.getElementById('logContainer') as HTMLDivElement;
+export const clearLogBtn = document.getElementById('clearLog') as HTMLButtonElement;

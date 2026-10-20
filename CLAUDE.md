@@ -7,13 +7,16 @@ QLever (SPARQL engine) compiled to WebAssembly via Emscripten, served as a local
 - `src/` — TypeScript frontend (Vite + Tailwind)
   - `wasm/worker.ts` — module Web Worker that loads and runs the WASM module
   - `wasm/loader.ts` — main-thread API that communicates with the worker
+  - `wasm/logRing.ts` — the shared-memory ring buffer that carries the engine's
+    log from the worker to the page
   - `ui/` — UI event handlers and rendering
   - `ui/state.ts` — the app state machine; every control's enabled/disabled state
     and its explanation are derived from it, so no action can be triggered that
     would fail
   - `ui/elements.ts` — resolves the UI's DOM nodes by id, so the other modules
-    import them instead of looking them up (the log panel is the exception: it is
-    resolved in `wasm/loader.ts`, which owns the log)
+    import them instead of looking them up
+  - `ui/log.ts` — the log panel: bounded, collapses repeated lines, updates the
+    DOM once per batch
   - `engine/` — query execution
   - `main.ts` — entry point: wires the UI up, then reports the engine's outcome
 - `index.html` — loads `src/main.ts`
@@ -69,6 +72,16 @@ To move to a newer engine, bump the dependency (`npm install @ad-freiburg/qlever
   `setBuildDetail()`, carries the specifics a state cannot know, such as the source
   filename or an error text. (The result panel has its own "Running query..."
   placeholder, set by `executor.ts`.)
+- The engine can log millions of lines per second (it once looped on a parse
+  warning), and that must never take the page down. So its output does not travel
+  as messages: the worker writes it into a fixed-size `SharedArrayBuffer` ring
+  (`logRing.ts`), which keeps working while the engine blocks the worker, and the
+  page polls it, taking a bounded number of lines per poll. When the page falls
+  behind, the ring fills and the worker drops lines and counts them, and the panel
+  reports the count where they went missing. The panel keeps the newest 50,000
+  lines. Don't mirror the log to `console.log` per line: the console keeps every
+  string alive. Output from the engine's own pthreads is relayed by Emscripten as
+  messages to the worker, so it only reaches the ring once the worker is free again.
 - The module is built for wasm64, so it needs a recent browser (or Node.js >= 24,
   which is also what the package's `engines` field requires).
 - The production image pre-compresses the assets at build time and lets nginx's
